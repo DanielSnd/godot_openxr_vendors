@@ -3,10 +3,14 @@ extends Node3D
 @export var passthrough_gradient: GradientTexture1D
 @export var passthrough_curve: Curve
 @export var bcs: Vector3
+@export var color_lut: Image
+@export var color_lut2: Image
 
 var xr_interface: XRInterface = null
 var hand_tracking_source: Array[OpenXRInterface.HandTrackedSource]
 var passthrough_enabled: bool = false
+var meta_color_lut: OpenXRMetaPassthroughColorLut
+var meta_color_lut2: OpenXRMetaPassthroughColorLut
 
 @onready var left_hand: XRController3D = $XROrigin3D/LeftHand
 @onready var right_hand: XRController3D = $XROrigin3D/RightHand
@@ -31,6 +35,10 @@ func _ready():
 	hand_tracking_source.resize(OpenXRInterface.HAND_MAX)
 	for hand in OpenXRInterface.HAND_MAX:
 		hand_tracking_source[hand] = xr_interface.get_hand_tracking_source(hand)
+
+	meta_color_lut = OpenXRMetaPassthroughColorLut.create_from_image(color_lut, OpenXRMetaPassthroughColorLut.COLOR_LUT_CHANNELS_RGB)
+	meta_color_lut2 = OpenXRMetaPassthroughColorLut.create_from_image(color_lut2, OpenXRMetaPassthroughColorLut.COLOR_LUT_CHANNELS_RGB)
+
 
 func enable_passthrough(enable: bool) -> void:
 	if passthrough_enabled == enable:
@@ -163,5 +171,11 @@ func update_passthrough_filter() -> void:
 			fb_passthrough.set_brightness_contrast_saturation(bcs.x, bcs.y, bcs.z)
 			passthrough_filter_info.text = STRING_BASE + "Brightness Contrast Saturation"
 		OpenXRFbPassthroughExtensionWrapper.PASSTHROUGH_FILTER_BRIGHTNESS_CONTRAST_SATURATION:
+			fb_passthrough.set_color_lut(meta_color_lut, 1.0)
+			passthrough_filter_info.text = STRING_BASE + "Color Map LUT"
+		OpenXRFbPassthroughExtensionWrapper.PASSTHROUGH_FILTER_COLOR_MAP_LUT:
+			fb_passthrough.set_interpolated_color_lut(meta_color_lut, meta_color_lut2, 0.5)
+			passthrough_filter_info.text = STRING_BASE + "Interpolated Color Map LUT"
+		OpenXRFbPassthroughExtensionWrapper.PASSTHROUGH_FILTER_COLOR_MAP_INTERPOLATED_LUT:
 			fb_passthrough.set_passthrough_filter(OpenXRFbPassthroughExtensionWrapper.PASSTHROUGH_FILTER_DISABLED)
 			passthrough_filter_info.text = STRING_BASE + "Disabled"
