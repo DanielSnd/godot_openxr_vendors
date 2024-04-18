@@ -1,5 +1,9 @@
 # Change history for the Godot OpenXR loaders asset
 
+## 3.x.x
+
+- Add support for developer-created spatial anchors via XR_FB_spatial_entity
+
 ## 3.0.0
 - Merge GDExtension into a single implementation
 - Upgrade Android, Gradle, Godot and Kotlin dependencies
