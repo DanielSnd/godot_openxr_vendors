@@ -31,6 +31,12 @@
 #ifndef OPENXR_FB_PASSTHROUGH_EXTENSION_WRAPPER_H
 #define OPENXR_FB_PASSTHROUGH_EXTENSION_WRAPPER_H
 
+#include "classes/openxr_fb_passthrough_geometry.h"
+#include "classes/openxr_meta_passthrough_color_lut.h"
+
+#include <godot_cpp/classes/curve.hpp>
+#include <godot_cpp/classes/gradient_texture1_d.hpp>
+#include <godot_cpp/classes/mesh.hpp>
 #include <godot_cpp/classes/open_xr_extension_wrapper_extension.hpp>
 #include <godot_cpp/classes/xr_interface.hpp>
 #include <godot_cpp/variant/utility_functions.hpp>
@@ -48,17 +54,41 @@ class OpenXRFbPassthroughExtensionWrapper : public OpenXRExtensionWrapperExtensi
 	GDCLASS(OpenXRFbPassthroughExtensionWrapper, OpenXRExtensionWrapperExtension);
 
 public:
+	enum LayerPurpose {
+		LAYER_PURPOSE_NONE = -1,
+		LAYER_PURPOSE_RECONSTRUCTION,
+		LAYER_PURPOSE_PROJECTED,
+		LAYER_PURPOSE_MAX,
+	};
+
+	enum PassthroughFilter {
+		PASSTHROUGH_FILTER_DISABLED,
+		PASSTHROUGH_FILTER_COLOR_MAP,
+		PASSTHROUGH_FILTER_MONO_MAP,
+		PASSTHROUGH_FILTER_BRIGHTNESS_CONTRAST_SATURATION,
+		PASSTHROUGH_FILTER_COLOR_MAP_LUT,
+		PASSTHROUGH_FILTER_COLOR_MAP_INTERPOLATED_LUT,
+	};
+
+	enum PassthroughStateChangedEvent {
+		PASSTHROUGH_ERROR_NON_RECOVERABLE,
+		PASSTHROUGH_ERROR_RECOVERABLE,
+		PASSTHROUGH_ERROR_RESTORED,
+	};
+
 	OpenXRFbPassthroughExtensionWrapper();
 	~OpenXRFbPassthroughExtensionWrapper();
 
 	godot::Dictionary _get_requested_extensions() override;
 
+	uint64_t _set_system_properties_and_get_next_pointer(void *p_next_pointer) override;
 	void _on_instance_created(uint64_t p_instance) override;
 	void _on_session_created(uint64_t p_session) override;
 	void _on_session_destroyed() override;
 	void _on_instance_destroyed() override;
 	void _on_state_ready() override;
 	void _on_process() override;
+	bool _on_event_polled(const void *p_event) override;
 
 	int _get_composition_layer_count() override;
 	uint64_t _get_composition_layer(int p_index) override;
@@ -68,10 +98,44 @@ public:
 		return fb_passthrough_ext;
 	}
 
-	bool is_passthrough_enabled();
+	bool is_passthrough_started() {
+		return passthrough_started;
+	}
 
-	bool start_passthrough();
+	void start_passthrough();
 	void stop_passthrough();
+
+	void start_passthrough_layer(LayerPurpose p_layer_purpose);
+	LayerPurpose get_current_layer_purpose() { return current_passthrough_layer; }
+
+	void register_geometry_node(OpenXRFbPassthroughGeometry *p_node);
+	void unregister_geometry_node(OpenXRFbPassthroughGeometry *p_node);
+
+	XrGeometryInstanceFB create_geometry_instance(const Ref<Mesh> &p_mesh, const Transform3D &p_transform);
+	void set_geometry_instance_transform(XrGeometryInstanceFB p_geometry_instance, const Transform3D &p_transform);
+	void destroy_geometry_instance(XrGeometryInstanceFB p_geometry_instance);
+
+	void set_texture_opacity_factor(float p_value);
+	float get_texture_opacity_factor();
+
+	void set_edge_color(Color p_color);
+	Color get_edge_color();
+
+	void set_passthrough_filter(PassthroughFilter p_filter);
+	PassthroughFilter get_current_passthrough_filter() { return current_passthrough_filter; }
+	void set_color_map(const Ref<GradientTexture1D> &p_gradient);
+	void set_mono_map(const Ref<Curve> &p_curve);
+	void set_brightness_contrast_saturation(float p_brightness, float p_contrast, float p_saturation);
+
+	bool has_passthrough_capability();
+	bool has_color_passthrough_capability();
+	bool has_layer_depth_passthrough_capability();
+
+	void set_color_lut(const Ref<OpenXRMetaPassthroughColorLut> &p_color_lut, float p_weight);
+	void set_interpolated_color_lut(const Ref<OpenXRMetaPassthroughColorLut> &p_source_color_lut, const Ref<OpenXRMetaPassthroughColorLut> &p_target_color_lut, float p_weight);
+	void create_color_lut(const Ref<OpenXRMetaPassthroughColorLut> &p_color_lut);
+	void destroy_color_lut(const Ref<OpenXRMetaPassthroughColorLut> &p_color_lut);
+	int get_max_color_lut_resolution();
 
 	static OpenXRFbPassthroughExtensionWrapper *get_singleton();
 
@@ -203,11 +267,22 @@ private:
 	// after a call to `xrTriangleMeshBeginVertexBufferUpdateFB`.
 	EXT_PROTO_XRRESULT_FUNC1(xrTriangleMeshEndVertexBufferUpdateFB, (XrTriangleMeshFB), mesh)
 
+	EXT_PROTO_XRRESULT_FUNC3(xrCreatePassthroughColorLutMETA,
+			(XrPassthroughFB), passthrough,
+			(const XrPassthroughColorLutCreateInfoMETA *), createInfo,
+			(XrPassthroughColorLutMETA *), colorLut)
+
+	EXT_PROTO_XRRESULT_FUNC1(xrDestroyPassthroughColorLutMETA, (XrPassthroughColorLutMETA), colorLut)
+
+	EXT_PROTO_XRRESULT_FUNC2(xrUpdatePassthroughColorLutMETA,
+			(XrPassthroughColorLutMETA), colorLut,
+			(const XrPassthroughColorLutUpdateInfoMETA *), updateInfo)
+
 	XRInterface::EnvironmentBlendMode get_blend_mode();
 
-	bool initialize_fb_passthrough_extension(const XrInstance instance);
-
-	bool initialize_fb_triangle_mesh_extension(const XrInstance instance);
+	bool initialize_fb_passthrough_extension(const XrInstance p_instance);
+	bool initialize_fb_triangle_mesh_extension(const XrInstance p_instance);
+	bool initialize_meta_passthrough_color_lut_extension(const XrInstance p_instance);
 
 	void cleanup();
 
@@ -217,19 +292,83 @@ private:
 
 	bool fb_passthrough_ext = false; // required for any passthrough functionality
 	bool fb_triangle_mesh_ext = false; // only use for projected passthrough
-
-	XRInterface::EnvironmentBlendMode previous_blend_mode = XRInterface::XR_ENV_BLEND_MODE_OPAQUE;
+	bool meta_passthrough_color_lut_ext = false;
 
 	XrPassthroughFB passthrough_handle = XR_NULL_HANDLE;
-	XrPassthroughLayerFB passthrough_layer = XR_NULL_HANDLE;
+	XrPassthroughLayerFB passthrough_layer[LAYER_PURPOSE_MAX] = { XR_NULL_HANDLE };
+
+	XrPassthroughColorLutMETA color_lut_handle = XR_NULL_HANDLE;
+	XrPassthroughColorLutMETA source_color_lut_handle = XR_NULL_HANDLE;
+	XrPassthroughColorLutMETA target_color_lut_handle = XR_NULL_HANDLE;
+
+	XrSystemPassthroughProperties2FB system_passthrough_properties = {
+		XR_TYPE_SYSTEM_PASSTHROUGH_PROPERTIES2_FB, // type
+		nullptr, // next
+		0, // capabilities
+	};
+
+	XrPassthroughStyleFB passthrough_style = {
+		XR_TYPE_PASSTHROUGH_STYLE_FB, // type
+		nullptr, // next
+		1.0, // textureOpacityFactor
+		{ 0.0, 0.0, 0.0, 0.0 }, // edgeColor
+	};
+
+	XrPassthroughColorMapMonoToRgbaFB color_map = {
+		XR_TYPE_PASSTHROUGH_COLOR_MAP_MONO_TO_RGBA_FB, // type
+		nullptr, // next
+	};
+
+	XrPassthroughColorMapMonoToMonoFB mono_map = {
+		XR_TYPE_PASSTHROUGH_COLOR_MAP_MONO_TO_MONO_FB, // type
+		nullptr, // next
+	};
+
+	XrPassthroughBrightnessContrastSaturationFB brightness_contrast_saturation = {
+		XR_TYPE_PASSTHROUGH_BRIGHTNESS_CONTRAST_SATURATION_FB, // type
+		nullptr, // next
+		0.0, // brightness
+		1.0, // contrast
+		1.0, // saturation
+	};
 
 	XrCompositionLayerPassthroughFB composition_passthrough_layer = {
-		XR_TYPE_COMPOSITION_LAYER_PASSTHROUGH_FB,
-		nullptr,
-		XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT,
-		XR_NULL_HANDLE,
-		XR_NULL_HANDLE,
+		XR_TYPE_COMPOSITION_LAYER_PASSTHROUGH_FB, // type
+		nullptr, // next
+		XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT, // flags
+		XR_NULL_HANDLE, // space
+		XR_NULL_HANDLE, // layerHandle
 	};
+
+	XrSystemPassthroughColorLutPropertiesMETA system_passthrough_color_lut_properties = {
+		XR_TYPE_SYSTEM_PASSTHROUGH_COLOR_LUT_PROPERTIES_META, // type
+		nullptr, // next
+		0, // maxColorLutResolution
+	};
+
+	XrPassthroughColorMapLutMETA color_map_lut = {
+		XR_TYPE_PASSTHROUGH_COLOR_MAP_LUT_META, // type
+		nullptr, // next
+		XR_NULL_HANDLE, // colorLut
+		1.0, // weight
+	};
+
+	XrPassthroughColorMapInterpolatedLutMETA color_map_interpolated_lut = {
+		XR_TYPE_PASSTHROUGH_COLOR_MAP_INTERPOLATED_LUT_META, // type
+		nullptr, // next
+		XR_NULL_HANDLE, //sourceColorLut
+		XR_NULL_HANDLE, //targetColorLut
+		1.0, // weight
+	};
+
+	bool passthrough_started = false;
+	LayerPurpose current_passthrough_layer = LAYER_PURPOSE_NONE;
+	PassthroughFilter current_passthrough_filter = PASSTHROUGH_FILTER_DISABLED;
+	Vector<OpenXRFbPassthroughGeometry *> passthrough_geometry_nodes;
 };
+
+VARIANT_ENUM_CAST(OpenXRFbPassthroughExtensionWrapper::LayerPurpose);
+VARIANT_ENUM_CAST(OpenXRFbPassthroughExtensionWrapper::PassthroughFilter);
+VARIANT_ENUM_CAST(OpenXRFbPassthroughExtensionWrapper::PassthroughStateChangedEvent);
 
 #endif // OPENXR_FB_PASSTHROUGH_EXTENSION_WRAPPER_H
