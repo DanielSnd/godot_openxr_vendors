@@ -94,6 +94,7 @@ public:
 	Rect2 get_bounding_box_2d() const;
 	AABB get_bounding_box_3d() const;
 	PackedVector2Array get_boundary_2d() const;
+	Array get_triangle_mesh() const;
 
 	void track();
 	void untrack();
