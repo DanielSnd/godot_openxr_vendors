@@ -129,6 +129,7 @@ void OpenXRFbFaceTrackingExtensionWrapper::_on_session_created(uint64_t instance
 	// Construct the XRFaceTracker if necessary
 	if (xr_face_tracker.is_null()) {
 		xr_face_tracker.instantiate();
+		xr_face_tracker->set_tracker_name("/user/face_tracker");
 	}
 }
 
@@ -149,7 +150,7 @@ void OpenXRFbFaceTrackingExtensionWrapper::_on_session_destroyed() {
 	if (xr_face_tracker_registered) {
 		XRServer *xr_server = XRServer::get_singleton();
 		if (xr_server) {
-			xr_server->remove_face_tracker("/user/head");
+			xr_server->remove_tracker(xr_face_tracker);
 		}
 	}
 	xr_face_tracker_registered = false;
@@ -352,7 +353,7 @@ void OpenXRFbFaceTrackingExtensionWrapper::_on_process() {
 	if (!xr_face_tracker_registered) {
 		XRServer *xr_server = XRServer::get_singleton();
 		if (xr_server) {
-			xr_server->add_face_tracker("/user/head", xr_face_tracker);
+			xr_server->add_tracker(xr_face_tracker);
 			xr_face_tracker_registered = true;
 		}
 	}

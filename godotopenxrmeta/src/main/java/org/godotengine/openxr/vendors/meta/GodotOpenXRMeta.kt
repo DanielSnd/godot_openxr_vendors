@@ -136,6 +136,30 @@ class GodotOpenXRMeta(godot: Godot?) : GodotPlugin(godot) {
             activity.requestPermissions(requestedPermissions.toTypedArray<String>(), PermissionsUtil.REQUEST_ALL_PERMISSION_REQ_CODE)
             return true
         }
+
+        /**
+         * Dispatch the necessary requests for all plugin's permissions in the app's manifest.
+         */
+        @JvmStatic
+        fun requestAllPluginPermissions(activity: Activity) {
+            val permissionsToRequest = ArrayList<String>()
+            // Request the eye tracking permission if it's included in the manifest
+            if (PermissionsUtil.hasManifestPermission(activity, EYE_TRACKING_PERMISSION)) {
+                permissionsToRequest.add(EYE_TRACKING_PERMISSION)
+            }
+            // Request the face tracking permission if it's included in the manifest
+            if (PermissionsUtil.hasManifestPermission(activity, FACE_TRACKING_PERMISSION)) {
+                permissionsToRequest.add(FACE_TRACKING_PERMISSION)
+            }
+            // Request the scene API permission if it's included in the manifest
+            if (PermissionsUtil.hasManifestPermission(activity, SCENE_PERMISSION)) {
+                permissionsToRequest.add(SCENE_PERMISSION)
+            }
+
+            if (permissionsToRequest.isNotEmpty()) {
+                requestPermissions(activity, permissionsToRequest)
+            }
+        }
     }
 
     override fun getPluginName(): String {
